@@ -239,14 +239,14 @@ impl MultiRegionNetworkEmulationConfig {
         }
     }
 
-    pub fn four_region() -> Self {
+    pub fn four_regions() -> Self {
         Self {
             link_stats_table: get_link_stats_table(FOUR_REGION_LINK_STATS),
             ..Default::default()
         }
     }
 
-    pub fn six_region() -> Self {
+    pub fn six_regions() -> Self {
         Self {
             link_stats_table: get_link_stats_table(SIX_REGION_LINK_STATS),
             ..Default::default()
@@ -267,13 +267,13 @@ impl MultiRegionNetworkEmulationTest {
     }
 
     pub fn default_for_validator_count(num_validators: usize) -> Self {
-        if num_validators < 20 {
+        if num_validators > 100 {
             Self {
-                network_emulation_config: MultiRegionNetworkEmulationConfig::four_region(),
+                network_emulation_config: MultiRegionNetworkEmulationConfig::six_regions(),
             }
         } else {
             Self {
-                network_emulation_config: MultiRegionNetworkEmulationConfig::six_region(),
+                network_emulation_config: MultiRegionNetworkEmulationConfig::four_regions(),
             }
         }
     }
