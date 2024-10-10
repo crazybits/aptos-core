@@ -254,7 +254,7 @@ impl ExecutionPipeline {
                             b.round(),
                             pipelined_block.round()
                         );
-                        for txn_hash in b.wait_for_committed_transactions() {
+                        for txn_hash in b.wait_for_committed_transactions().iter() {
                             committed_transactions.insert(*txn_hash);
                         }
                     });

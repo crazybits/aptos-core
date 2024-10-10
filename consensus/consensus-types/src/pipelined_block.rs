@@ -11,7 +11,7 @@ use crate::{
     vote_proposal::VoteProposal,
 };
 use aptos_crypto::hash::{HashValue, ACCUMULATOR_PLACEHOLDER_HASH};
-use aptos_executor_types::{ExecutorResult, StateComputeResult};
+use aptos_executor_types::{ExecutorError, ExecutorResult, StateComputeResult};
 use aptos_infallible::Mutex;
 use aptos_logger::{error, info, warn};
 use aptos_types::{
@@ -76,7 +76,8 @@ pub struct PipelinedBlock {
     execution_summary: Arc<OnceCell<ExecutionSummary>>,
     #[derivative(PartialEq = "ignore")]
     pre_commit_fut: Arc<Mutex<Option<BoxFuture<'static, ExecutorResult<()>>>>>,
-    committed_transactions: Arc<OnceCell<Vec<HashValue>>>,
+    #[derivative(PartialEq = "ignore")]
+    committed_transactions: Arc<Mutex<Option<OnceCell<ExecutorResult<Arc<Vec<HashValue>>>>>>>,
 }
 
 impl Serialize for PipelinedBlock {
@@ -143,7 +144,7 @@ impl<'de> Deserialize<'de> for PipelinedBlock {
             pipeline_insertion_time: OnceCell::new(),
             execution_summary: Arc::new(OnceCell::new()),
             pre_commit_fut: Arc::new(Mutex::new(None)),
-            committed_transactions: Arc::new(OnceCell::new()),
+            committed_transactions: Arc::new(Mutex::new(None)),
         };
         if let Some(r) = randomness {
             block.set_randomness(r);
@@ -270,7 +271,7 @@ impl PipelinedBlock {
             pipeline_insertion_time: OnceCell::new(),
             execution_summary: Arc::new(OnceCell::new()),
             pre_commit_fut: Arc::new(Mutex::new(None)),
-            committed_transactions: Arc::new(OnceCell::new()),
+            committed_transactions: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -292,7 +293,7 @@ impl PipelinedBlock {
             pipeline_insertion_time: OnceCell::new(),
             execution_summary: Arc::new(OnceCell::new()),
             pre_commit_fut: Arc::new(Mutex::new(None)),
-            committed_transactions: Arc::new(OnceCell::new()),
+            committed_transactions: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -315,7 +316,9 @@ impl PipelinedBlock {
             pipeline_insertion_time: OnceCell::new(),
             execution_summary: Arc::new(OnceCell::new()),
             pre_commit_fut: Arc::new(Mutex::new(None)),
-            committed_transactions: Arc::new(OnceCell::with_value(committed_transactions)),
+            committed_transactions: Arc::new(Mutex::new(Some(OnceCell::with_value(Ok(Arc::new(
+                committed_transactions,
+            )))))),
         }
     }
 
@@ -423,6 +426,10 @@ impl PipelinedBlock {
         self.execution_summary.get().cloned()
     }
 
+    pub fn init_committed_transactions(&self) {
+        *self.committed_transactions.lock() = Some(OnceCell::new());
+    }
+
     pub fn set_committed_transactions(&self, committed_transactions: Vec<HashValue>) {
         info!(
             "Setting committed transactions: ({}, {}) {}",
@@ -430,9 +437,11 @@ impl PipelinedBlock {
             self.round(),
             self.id()
         );
-        self.committed_transactions
-            .set(committed_transactions)
-            .unwrap();
+        if let Some(once_cell) = self.committed_transactions.lock().as_ref() {
+            once_cell
+                .set(Ok(Arc::new(committed_transactions)))
+                .expect("committed_transactions already set")
+        };
     }
 
     pub fn cancel_committed_transactions(&self) {
@@ -442,28 +451,51 @@ impl PipelinedBlock {
             self.round(),
             self.id()
         );
-        self.committed_transactions.set(vec![]).unwrap();
+        if let Some(once_cell) = self.committed_transactions.lock().as_ref() {
+            once_cell
+                .set(Err(ExecutorError::CouldNotGetCommittedTransactions))
+                .expect("committed_transactions already set")
+        };
     }
 
-    pub fn wait_for_committed_transactions(&self) -> &[HashValue] {
+    // TODO: change return value
+    pub fn wait_for_committed_transactions(&self) -> Arc<Vec<HashValue>> {
         if self.block().is_genesis_block() || self.block.is_nil_block() {
-            return &[];
+            return Arc::new(vec![]);
         }
-
         info!(
             "Waiting for committed transactions: ({}, {}) {}",
             self.epoch(),
             self.round(),
             self.id()
         );
-        let result = self.committed_transactions.wait();
-        info!(
-            "Done waiting for committed transactions: ({}, {}) {}",
-            self.epoch(),
-            self.round(),
-            self.id()
-        );
-        result
+
+        let guard = self.committed_transactions.lock();
+        let inner = guard.clone();
+        drop(guard);
+
+        if let Some(once_cell) = inner {
+            match once_cell.wait() {
+                Ok(committed_transactions) => committed_transactions.clone(),
+                Err(_) => {
+                    warn!(
+                        "Failed to wait for committed transactions: ({}, {}) {}",
+                        self.epoch(),
+                        self.round(),
+                        self.id()
+                    );
+                    Arc::new(vec![])
+                },
+            }
+        } else {
+            warn!(
+                "No committed transactions to wait for: ({}, {}) {}",
+                self.epoch(),
+                self.round(),
+                self.id()
+            );
+            Arc::new(vec![])
+        }
     }
 }
 
