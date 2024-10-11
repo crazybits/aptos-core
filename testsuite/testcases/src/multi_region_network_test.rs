@@ -224,7 +224,7 @@ pub struct MultiRegionNetworkEmulationConfig {
 impl Default for MultiRegionNetworkEmulationConfig {
     fn default() -> Self {
         Self {
-            link_stats_table: get_link_stats_table(SIX_REGION_LINK_STATS),
+            link_stats_table: get_link_stats_table(FOUR_REGION_LINK_STATS),
             inter_region_config: InterRegionNetEmConfig::default(),
             intra_region_config: Some(IntraRegionNetEmConfig::default()),
         }
@@ -267,7 +267,7 @@ impl MultiRegionNetworkEmulationTest {
     }
 
     pub fn default_for_validator_count(num_validators: usize) -> Self {
-        if num_validators > 100 {
+        if num_validators > 0 {
             Self {
                 network_emulation_config: MultiRegionNetworkEmulationConfig::six_regions(),
             }
