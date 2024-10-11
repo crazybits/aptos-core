@@ -17,8 +17,9 @@ use aptos_logger::{error, warn};
 use aptos_types::{
     block_info::BlockInfo,
     contract_event::ContractEvent,
+    epoch_state::EpochState,
     randomness::Randomness,
-    transaction::{SignedTransaction, TransactionStatus},
+    transaction::{BlockEndInfo, SignedTransaction, TransactionStatus},
     validator_txn::ValidatorTransaction,
 };
 use derivative::Derivative;
@@ -44,6 +45,7 @@ pub struct PipelinedBlock {
     /// The state_compute_result is calculated for all the pending blocks prior to insertion to
     /// the tree. The execution results are not persisted: they're recalculated again for the
     /// pending blocks upon restart.
+    #[derivative(PartialEq = "ignore")]
     state_compute_result: StateComputeResult,
     randomness: OnceCell<Randomness>,
     pipeline_insertion_time: OnceCell<Instant>,
@@ -62,14 +64,14 @@ impl Serialize for PipelinedBlock {
         struct SerializedBlock<'a> {
             block: &'a Block,
             input_transactions: &'a Vec<SignedTransaction>,
-            state_compute_result: &'a StateComputeResult,
+            _deprecated: _DeprecatedStateComputeResult,
             randomness: Option<&'a Randomness>,
         }
 
         let serialized = SerializedBlock {
             block: &self.block,
             input_transactions: &self.input_transactions,
-            state_compute_result: &self.state_compute_result,
+            _deprecated: _DeprecatedStateComputeResult::dummy(),
             randomness: self.randomness.get(),
         };
         serialized.serialize(serializer)
@@ -86,21 +88,19 @@ impl<'de> Deserialize<'de> for PipelinedBlock {
         struct SerializedBlock {
             block: Block,
             input_transactions: Vec<SignedTransaction>,
-            state_compute_result: StateComputeResult,
             randomness: Option<Randomness>,
         }
 
         let SerializedBlock {
             block,
             input_transactions,
-            state_compute_result,
             randomness,
         } = SerializedBlock::deserialize(deserializer)?;
 
         let block = PipelinedBlock {
             block,
             input_transactions,
-            state_compute_result,
+            state_compute_result: StateComputeResult::new_dummy(),
             randomness: OnceCell::new(),
             pipeline_insertion_time: OnceCell::new(),
             execution_summary: Arc::new(OnceCell::new()),
@@ -343,4 +343,35 @@ pub struct ExecutionSummary {
     pub to_retry: u64,
     pub execution_time: Duration,
     pub root_hash: HashValue,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct _DeprecatedStateComputeResult {
+    _root_hash: HashValue,
+    _frozen_subtree_roots: Vec<HashValue>,
+    _parent_frozen_subtree_roots: Vec<HashValue>,
+    _num_leaves: u64,
+    _parent_num_leaves: u64,
+    _epoch_state: Option<EpochState>,
+    _compute_status_for_input_txns: Vec<TransactionStatus>,
+    _transaction_info_hashes: Vec<HashValue>,
+    _subscribable_events: Vec<ContractEvent>,
+    _block_end_info: Option<BlockEndInfo>,
+}
+
+impl _DeprecatedStateComputeResult {
+    fn dummy() -> Self {
+        Self {
+            _root_hash: HashValue::zero(),
+            _frozen_subtree_roots: vec![],
+            _parent_frozen_subtree_roots: vec![],
+            _num_leaves: 0,
+            _parent_num_leaves: 0,
+            _epoch_state: None,
+            _compute_status_for_input_txns: vec![],
+            _transaction_info_hashes: vec![],
+            _subscribable_events: vec![],
+            _block_end_info: None,
+        }
+    }
 }
