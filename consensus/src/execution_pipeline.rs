@@ -244,20 +244,46 @@ impl ExecutionPipeline {
 
             // TODO: lots of repeated code here
             monitor!("execute_wait_for_committed_transactions", {
-                block_window
+                for b in block_window
                     .pipelined_blocks()
                     .iter()
                     .filter(|window_block| window_block.round() == pipelined_block.round() - 1)
-                    .for_each(|b| {
-                        info!(
-                            "Execution: Waiting for committed transactions at block {} for block {}",
-                            b.round(),
-                            pipelined_block.round()
-                        );
-                        for txn_hash in b.wait_for_committed_transactions().iter() {
-                            committed_transactions.insert(*txn_hash);
-                        }
-                    });
+                {
+                    info!(
+                        "Execution: Waiting for committed transactions at block {} for block {}",
+                        b.round(),
+                        pipelined_block.round()
+                    );
+                    let txn_hashes = b.wait_for_committed_transactions();
+                    match txn_hashes {
+                        Ok(txn_hashes) => {
+                            for txn_hash in txn_hashes.iter() {
+                                committed_transactions.insert(*txn_hash);
+                            }
+                        },
+                        Err(e) => {
+                            info!(
+                                "Execution: Waiting for committed transactions at block {} for block {}: Failed {}",
+                                b.round(),
+                                pipelined_block.round(),
+                                e
+                            );
+                            // TODO: can't clone, so make the whole thing return an error, then send it after this block of code.
+                            result_tx
+                                .send(Err(ExecutorError::CouldNotGetCommittedTransactions))
+                                .unwrap_or_else(log_failed_to_send_result(
+                                    "execute_stage",
+                                    block_id,
+                                ));
+                            return;
+                        },
+                    }
+                    info!(
+                        "Execution: Waiting for committed transactions at block {} for block {}: Done",
+                        b.round(),
+                        pipelined_block.round()
+                    );
+                }
             });
 
             let (mut txns, blocking_txns_provider) =

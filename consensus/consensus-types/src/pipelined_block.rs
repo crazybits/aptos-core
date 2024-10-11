@@ -77,7 +77,7 @@ pub struct PipelinedBlock {
     #[derivative(PartialEq = "ignore")]
     pre_commit_fut: Arc<Mutex<Option<BoxFuture<'static, ExecutorResult<()>>>>>,
     #[derivative(PartialEq = "ignore")]
-    committed_transactions: Arc<Mutex<Option<OnceCell<ExecutorResult<Arc<Vec<HashValue>>>>>>>,
+    committed_transactions: Arc<Mutex<Option<Arc<OnceCell<ExecutorResult<Arc<Vec<HashValue>>>>>>>>,
 }
 
 impl Serialize for PipelinedBlock {
@@ -316,8 +316,8 @@ impl PipelinedBlock {
             pipeline_insertion_time: OnceCell::new(),
             execution_summary: Arc::new(OnceCell::new()),
             pre_commit_fut: Arc::new(Mutex::new(None)),
-            committed_transactions: Arc::new(Mutex::new(Some(OnceCell::with_value(Ok(Arc::new(
-                committed_transactions,
+            committed_transactions: Arc::new(Mutex::new(Some(Arc::new(OnceCell::with_value(Ok(
+                Arc::new(committed_transactions),
             )))))),
         }
     }
@@ -427,7 +427,13 @@ impl PipelinedBlock {
     }
 
     pub fn init_committed_transactions(&self) {
-        *self.committed_transactions.lock() = Some(OnceCell::new());
+        info!(
+            "Init committed transactions: ({}, {}) {}",
+            self.epoch(),
+            self.round(),
+            self.id()
+        );
+        *self.committed_transactions.lock() = Some(Arc::new(OnceCell::new()));
     }
 
     pub fn set_committed_transactions(&self, committed_transactions: Vec<HashValue>) {
@@ -438,10 +444,29 @@ impl PipelinedBlock {
             self.id()
         );
         if let Some(once_cell) = self.committed_transactions.lock().as_ref() {
+            info!(
+                "Setting committed transactions: locked: ({}, {}) {}",
+                self.epoch(),
+                self.round(),
+                self.id()
+            );
             once_cell
                 .set(Ok(Arc::new(committed_transactions)))
                 .expect("committed_transactions already set")
-        };
+        } else {
+            warn!(
+                "No once_cell to set: ({}, {}) {}",
+                self.epoch(),
+                self.round(),
+                self.id()
+            );
+        }
+        info!(
+            "Setting committed transactions: done: ({}, {}) {}",
+            self.epoch(),
+            self.round(),
+            self.id()
+        );
     }
 
     pub fn cancel_committed_transactions(&self) {
@@ -459,9 +484,9 @@ impl PipelinedBlock {
     }
 
     // TODO: change return value
-    pub fn wait_for_committed_transactions(&self) -> Arc<Vec<HashValue>> {
+    pub fn wait_for_committed_transactions(&self) -> ExecutorResult<Arc<Vec<HashValue>>> {
         if self.block().is_genesis_block() || self.block.is_nil_block() {
-            return Arc::new(vec![]);
+            return Ok(Arc::new(vec![]));
         }
         info!(
             "Waiting for committed transactions: ({}, {}) {}",
@@ -471,12 +496,26 @@ impl PipelinedBlock {
         );
 
         let guard = self.committed_transactions.lock();
+        info!(
+            "Waiting for committed transactions: locked: ({}, {}) {}",
+            self.epoch(),
+            self.round(),
+            self.id()
+        );
         let inner = guard.clone();
         drop(guard);
 
         if let Some(once_cell) = inner {
             match once_cell.wait() {
-                Ok(committed_transactions) => committed_transactions.clone(),
+                Ok(committed_transactions) => {
+                    info!(
+                        "Done waiting for committed transactions: ({}, {}) {}",
+                        self.epoch(),
+                        self.round(),
+                        self.id()
+                    );
+                    Ok(committed_transactions.clone())
+                },
                 Err(_) => {
                     warn!(
                         "Failed to wait for committed transactions: ({}, {}) {}",
@@ -484,7 +523,7 @@ impl PipelinedBlock {
                         self.round(),
                         self.id()
                     );
-                    Arc::new(vec![])
+                    Err(ExecutorError::CouldNotGetCommittedTransactions)
                 },
             }
         } else {
@@ -494,7 +533,7 @@ impl PipelinedBlock {
                 self.round(),
                 self.id()
             );
-            Arc::new(vec![])
+            Err(ExecutorError::CouldNotGetCommittedTransactions)
         }
     }
 }

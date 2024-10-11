@@ -162,6 +162,8 @@ impl StateComputer for ExecutionProxy {
         randomness: Option<Randomness>,
         lifetime_guard: CountedRequest<()>,
     ) -> StateComputeResultFut {
+        block.init_committed_transactions();
+
         let block_id = block.id();
         debug!(
             block = %block,
@@ -218,8 +220,19 @@ impl StateComputer for ExecutionProxy {
         counters::PIPELINE_ENTRY_TO_INSERTED_TIME.observe_duration(pipeline_entry_time.elapsed());
         let pipeline_inserted_timestamp = Instant::now();
 
+        let block_cloned = block.clone();
         Box::pin(async move {
-            let pipeline_execution_result = fut.await?;
+            let pipeline_execution_result = match fut.await {
+                Ok(result) => result,
+                Err(e) => {
+                    error!(
+                        error = ?e,
+                        "Failed to execute block in pipeline",
+                    );
+                    block_cloned.cancel_committed_transactions();
+                    return Err(e);
+                },
+            };
             debug!(
                 block_id = block_id,
                 "Got state compute result, post processing."
