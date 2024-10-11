@@ -222,7 +222,7 @@ impl ExecutionPipeline {
         ledger_apply_tx: mpsc::UnboundedSender<LedgerApplyCommand>,
         executor: Arc<dyn BlockExecutorTrait>,
     ) {
-        while let Some(ExecuteBlockCommand {
+        'outer: while let Some(ExecuteBlockCommand {
             input_txns: _,
             pipelined_block,
             block,
@@ -275,7 +275,7 @@ impl ExecutionPipeline {
                                     "execute_stage",
                                     block_id,
                                 ));
-                            return;
+                            continue 'outer;
                         },
                     }
                     info!(
