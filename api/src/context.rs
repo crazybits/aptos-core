@@ -38,7 +38,11 @@ use aptos_types::{
     ledger_info::LedgerInfoWithSignatures,
     on_chain_config::{GasSchedule, GasScheduleV2, OnChainConfig, OnChainExecutionConfig},
     state_store::{
-        state_key::{inner::StateKeyInner, prefix::StateKeyPrefix, StateKey},
+        state_key::{
+            inner::{StateKeyInner, StateKeyTag},
+            prefix::StateKeyPrefix,
+            StateKey,
+        },
         state_value::StateValue,
         TStateView,
     },
@@ -425,6 +429,45 @@ impl Context {
                     latest_ledger_info,
                 )
             })
+    }
+
+    pub fn get_table_rows(
+        &self,
+        address: AccountAddress,
+        version: u64,
+    ) -> Result<HashMap<StateKey, StateValue>> {
+        let mut iter = if !db_sharding_enabled(&self.node_config) {
+            Box::new(
+                self.db
+                    .get_prefixed_state_value_iterator(
+                        &StateKeyPrefix::new(
+                            StateKeyTag::TableItem,
+                            bcs::to_bytes(&address)?.to_vec(),
+                        ),
+                        None,
+                        version,
+                    )?
+                    .map(|item| item.map_err(|err| anyhow!(err.to_string()))),
+            )
+        } else {
+            self.indexer_reader
+                .as_ref()
+                .ok_or_else(|| format_err!("Indexer reader doesn't exist"))?
+                .get_prefixed_state_value_iterator(
+                    &StateKeyPrefix::new(StateKeyTag::TableItem, bcs::to_bytes(&address)?.to_vec()),
+                    None,
+                    version,
+                )?
+        };
+
+        let kvs = iter
+            .by_ref()
+            .take(MAX_REQUEST_LIMIT as usize)
+            .collect::<Result<_>>()?;
+        if iter.next().transpose()?.is_some() {
+            bail!("Too many state items under account ({:?}).", address);
+        }
+        Ok(kvs)
     }
 
     pub fn get_state_values(

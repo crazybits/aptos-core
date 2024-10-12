@@ -43,7 +43,7 @@ pub use move_types::{
 use serde::{Deserialize, Deserializer};
 pub use state::RawStateValueRequest;
 use std::str::FromStr;
-pub use table::{RawTableItemRequest, TableItemRequest};
+pub use table::{RawTableItemRequest, TableItemRequest, TableRow};
 pub use transaction::{
     AbstractionSignature, AccountSignature, BlockMetadataTransaction, DeleteModule, DeleteResource,
     DeleteTableItem, DirectWriteSet, Ed25519Signature, EncodeSubmissionRequest,
