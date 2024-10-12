@@ -187,11 +187,6 @@ impl BlockTree {
         Ok(Self { root, block_lookup })
     }
 
-    pub fn reset(&self, db: &Arc<dyn DbReader>) -> Result<()> {
-        *self.root.lock() = Self::root_from_db(&self.block_lookup, db)?;
-        Ok(())
-    }
-
     pub fn get_block(&self, id: HashValue) -> Result<Arc<Block>> {
         Ok(self.get_blocks(&[id])?.pop().expect("Must exist."))
     }
