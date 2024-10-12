@@ -24,8 +24,8 @@ pub use aptos_api_types::{
 use aptos_api_types::{
     deserialize_from_string,
     mime_types::{BCS, BCS_SIGNED_TRANSACTION, BCS_VIEW_FUNCTION, JSON},
-    AptosError, AptosErrorCode, BcsBlock, Block, GasEstimation, HexEncodedBytes, IndexResponse,
-    MoveModuleId, TransactionData, TransactionOnChainData, TransactionsBatchSubmissionResult,
+    AptosErrorCode,AptosError, BcsBlock, Block, GasEstimation, HexEncodedBytes, IndexResponse, MoveModuleId,
+    TableRow, TransactionData, TransactionOnChainData, TransactionsBatchSubmissionResult,
     UserTransaction, VersionedEvent, ViewFunction, ViewRequest,
 };
 use aptos_crypto::HashValue;
@@ -35,8 +35,9 @@ use aptos_types::{
     account_config::{AccountResource, NewBlockEvent, CORE_CODE_ADDRESS},
     contract_event::EventWithVersion,
     keyless::{Groth16Proof, Pepper, ZeroKnowledgeSig, ZKP},
-    state_store::state_key::StateKey,
+
     transaction::{authenticator::EphemeralSignature, SignedTransaction},
+    state_store::state_key::{inner::StateKeyInner, StateKey},
 };
 use move_core_types::{
     ident_str,
@@ -1434,6 +1435,42 @@ impl Client {
                 .collect();
             new_events
         })
+    }
+
+    pub async fn get_table_rows_bcs<K: Serialize + DeserializeOwned, V: DeserializeOwned>(
+        &self,
+        table_handle: AccountAddress,
+    ) -> AptosResult<Response<Vec<(K, V)>>> {
+        let url = self.build_path(&format!("tables/{}/rows", table_handle))?;
+
+        let response = self.post_bcs(url, json!({})).await?;
+        let state = response.state().clone();
+        let table_rows: Vec<TableRow> =
+            bcs::from_bytes(&response.into_inner()).expect("Failed to deserialize table rows");
+        let result: Vec<(K, V)> = table_rows
+            .into_iter()
+            .map(|row| {
+                // First decode the bytes into StateKey
+                let state_key = StateKey::decode(row.key.as_slice())
+                    .map_err(|e| anyhow!("Failed to decode StateKey: {}", e))?;
+
+                // Extract the key bytes from StateKey
+                let key_bytes = match state_key.inner() {
+                    StateKeyInner::TableItem { key, .. } => key,
+                    _ => return Err(anyhow!("Expected TableItem state key").into()),
+                };
+
+                // Deserialize the key and value
+                let key = bcs::from_bytes(&key_bytes)
+                    .map_err(|e| anyhow!("Failed to deserialize key: {}", e))?;
+                let value = bcs::from_bytes(&row.value)
+                    .map_err(|e| anyhow!("Failed to deserialize value: {}", e))?;
+
+                Ok((key, value))
+            })
+            .collect::<AptosResult<Vec<_>>>()?;
+
+        Ok(Response::new(result, state))
     }
 
     pub async fn get_table_item<K: Serialize>(

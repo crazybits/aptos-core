@@ -27,3 +27,8 @@ impl VerifyInput for TableItemRequest {
 pub struct RawTableItemRequest {
     pub key: HexEncodedBytes,
 }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Object)]
+pub struct TableRow {
+    pub key: Vec<u8>,
+    pub value: Vec<u8>,
+}

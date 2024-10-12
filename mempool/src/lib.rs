@@ -62,8 +62,8 @@ pub use shared_mempool::{
     bootstrap, network,
     network::MempoolSyncMsg,
     types::{
-        MempoolClientRequest, MempoolClientSender, MempoolEventsReceiver, QuorumStoreRequest,
-        QuorumStoreResponse, SubmissionStatus,
+        MempoolClientRequest, MempoolClientSender, MempoolEventsReceiver, MempoolMessageId,
+        QuorumStoreRequest, QuorumStoreResponse, SubmissionStatus,
     },
 };
 #[cfg(any(test, feature = "fuzzing"))]
@@ -72,5 +72,5 @@ pub use tests::{fuzzing, mocks};
 mod core_mempool;
 pub mod counters;
 mod logging;
-mod shared_mempool;
+pub mod shared_mempool;
 pub(crate) mod thread_pool;
