@@ -1297,6 +1297,23 @@ impl Client {
         })
     }
 
+    pub async fn get_table_rows_bcs<K: Serialize + DeserializeOwned, V: DeserializeOwned>(
+        &self,
+        table_handle: AccountAddress,
+        start: Option<u64>,
+        limit: Option<u16>,
+    ) -> AptosResult<Response<Vec<(K, V)>>> {
+        let url = self.build_path(&format!("tables/{}/rows", table_handle))?;
+
+        let data = json!({
+            "start": start,
+            "limit": limit,
+        });
+
+        let response = self.post_bcs(url, data).await?;
+        Ok(response.and_then(|inner| bcs::from_bytes(&inner))?)
+    }
+
     pub async fn get_table_item<K: Serialize>(
         &self,
         table_handle: AccountAddress,

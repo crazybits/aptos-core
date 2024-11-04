@@ -175,6 +175,47 @@ impl StateApi {
         .await
     }
 
+    #[oai(
+        path = "/tables/:table_handle/rows",
+        method = "post",
+        operation_id = "get_table_rows",
+        tag = "ApiTags::Tables"
+    )]
+    async fn get_table_rows(
+        &self,
+        accept_type: AcceptType,
+        table_handle: Path<Address>,
+        // table_rows_request: Json<TableRowsRequest>,
+        ledger_version: Query<Option<U64>>,
+    ) -> BasicResultWith404<Vec<(Vec<u8>, Vec<u8>)>> {
+        // // Verify request
+        // let key_type = table_rows_request.0.key_type.try_into()?;
+        // let value_type = table_rows_request.0.value_type.try_into()?;
+
+        // Get state values
+        let state_key = StateKey::table_handle(&TableHandle(table_handle.0.into()));
+        let state_values = self
+            .context
+            .get_state_values(table_handle.0, ledger_version.0.map(|v| v.0))?;
+
+        // Process results
+        let mut results = Vec::new();
+        for (key, value) in state_values {
+            results.push((key.to_vec(), value.to_vec()));
+        }
+
+        match accept_type {
+            AcceptType::Bcs => BasicResponse::try_from_bcs((
+                results,
+                &self.latest_ledger_info,
+                BasicResponseStatus::Ok,
+            )),
+            _ => Err(api_forbidden(
+                "Get table rows",
+                "Only BCS is supported as an AcceptType.",
+            )),
+        }
+    }
     /// Get raw table item
     ///
     /// Get a table item at a specific ledger version from the table identified by {table_handle}
@@ -375,7 +416,6 @@ impl StateApi {
             )),
         }
     }
-
     /// Retrieve table item for a specific ledger version
     pub fn table_item(
         &self,
