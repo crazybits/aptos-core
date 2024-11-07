@@ -14,9 +14,10 @@ use crate::{
 };
 use anyhow::Context as AnyhowContext;
 use aptos_api_types::{
-    verify_module_identifier, Address, AptosErrorCode, AsConverter, IdentifierWrapper,
-    MoveModuleBytecode, MoveResource, MoveStructTag, MoveValue, RawStateValueRequest,
-    RawTableItemRequest, TableItemRequest, VerifyInput, VerifyInputWithRecursion, U64,
+    verify_module_identifier, Address, AptosErrorCode, AsConverter, HexEncodedBytes,
+    IdentifierWrapper, MoveModuleBytecode, MoveResource, MoveStructTag, MoveValue,
+    RawStateValueRequest, RawTableItemRequest, TableItemRequest, TableRow, VerifyInput,
+    VerifyInputWithRecursion, U64,
 };
 use aptos_types::state_store::{state_key::StateKey, table::TableHandle, TStateView};
 use move_core_types::language_storage::StructTag;
@@ -173,6 +174,26 @@ impl StateApi {
             )
         })
         .await
+    }
+
+    #[oai(
+        path = "/tables/:table_handle/rows",
+        method = "post",
+        operation_id = "get_table_rows",
+        tag = "ApiTags::Tables"
+    )]
+    async fn get_table_rows(
+        &self,
+        accept_type: AcceptType,
+        table_handle: Path<Address>,
+        ledger_version: Query<Option<U64>>,
+    ) -> BasicResultWith404<Vec<TableRow>> {
+        fail_point_poem("endpoint_get_table_rows")?;
+        self.context
+            .check_api_output_enabled("Get table rows", &accept_type)?;
+        let api = self.clone();
+        api_spawn_blocking(move || api.table_rows(&accept_type, table_handle.0, ledger_version.0))
+            .await
     }
 
     /// Get raw table item
@@ -587,6 +608,47 @@ impl StateApi {
             )),
             AcceptType::Bcs => {
                 BasicResponse::try_from_encoded((bytes, &ledger_info, BasicResponseStatus::Ok))
+            },
+        }
+    }
+
+    //add table rows api
+    pub fn table_rows(
+        &self,
+        accept_type: &AcceptType,
+        table_handle: Address,
+        ledger_version: Option<U64>,
+    ) -> BasicResultWith404<Vec<TableRow>> {
+        let (ledger_info, ledger_version, _) = self
+            .context
+            .state_view(ledger_version.map(|inner| inner.0))?;
+
+        let kvs = self
+            .context
+            .get_state_values(table_handle.into(), ledger_version)
+            .map_err(|err| {
+                BasicErrorWith404::internal_with_code(
+                    err,
+                    AptosErrorCode::InternalError,
+                    &ledger_info,
+                )
+            })?;
+
+        let table_rows: Vec<TableRow> = kvs
+            .into_iter()
+            .map(|(key, value)| TableRow {
+                key: HexEncodedBytes::from(key.encoded().to_vec()),
+                value: HexEncodedBytes::from(value.bytes().to_vec()),
+            })
+            .collect();
+
+        match accept_type {
+            AcceptType::Json => Err(api_forbidden(
+                "Get raw state value",
+                "This serves only bytes. Use other APIs for Json.",
+            )),
+            AcceptType::Bcs => {
+                BasicResponse::try_from_bcs((table_rows, &ledger_info, BasicResponseStatus::Ok))
             },
         }
     }

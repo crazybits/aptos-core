@@ -24,8 +24,8 @@ use aptos_api_types::{
     deserialize_from_string,
     mime_types::{BCS, BCS_SIGNED_TRANSACTION, BCS_VIEW_FUNCTION, JSON},
     AptosError, BcsBlock, Block, GasEstimation, HexEncodedBytes, IndexResponse, MoveModuleId,
-    TransactionData, TransactionOnChainData, TransactionsBatchSubmissionResult, UserTransaction,
-    VersionedEvent, ViewFunction, ViewRequest,
+    TableRow, TransactionData, TransactionOnChainData, TransactionsBatchSubmissionResult,
+    UserTransaction, VersionedEvent, ViewFunction, ViewRequest,
 };
 use aptos_crypto::HashValue;
 use aptos_logger::{debug, info, sample, sample::SampleRate};
@@ -1295,6 +1295,37 @@ impl Client {
                 .collect();
             new_events
         })
+    }
+
+    pub async fn get_table_rows_bcs<K: Serialize + DeserializeOwned, V: DeserializeOwned>(
+        &self,
+        table_handle: AccountAddress,
+        start: Option<u64>,
+        limit: Option<u16>,
+    ) -> AptosResult<Response<Vec<(K, V)>>> {
+        let url = self.build_path(&format!("tables/{}/rows", table_handle))?;
+
+        let data = json!({
+            "start": start,
+            "limit": limit,
+        });
+        let response = self.post_bcs(url, data).await?;
+        let state = response.state().clone();
+        let table_rows = response
+            .and_then(|inner| bcs::from_bytes::<Vec<TableRow>>(&inner))?
+            .into_inner();
+        // Then transform the table rows into the desired format
+        let result: Vec<(K, V)> = table_rows
+            .into_iter()
+            .map(|row| {
+                let key: K = bcs::from_bytes(&row.key.0)?;
+                let value: V = bcs::from_bytes(&row.value.0)?;
+                Ok((key, value))
+            })
+            .collect::<Result<Vec<_>, bcs::Error>>()?;
+
+        // Return the result wrapped in the original response's state
+        Ok(Response::new(result, state))
     }
 
     pub async fn get_table_item<K: Serialize>(
