@@ -1318,8 +1318,8 @@ impl Client {
         let result: Vec<(K, V)> = table_rows
             .into_iter()
             .map(|row| {
-                let key: K = bcs::from_bytes(&row.key.0)?;
-                let value: V = bcs::from_bytes(&row.value.0)?;
+                let key: K = bcs::from_bytes(&row.key)?;
+                let value: V = bcs::from_bytes(&row.value)?;
                 Ok((key, value))
             })
             .collect::<Result<Vec<_>, bcs::Error>>()?;

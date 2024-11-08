@@ -625,7 +625,7 @@ impl StateApi {
 
         let kvs = self
             .context
-            .get_state_values(table_handle.into(), ledger_version)
+            .get_table_rows(table_handle.into(), ledger_version)
             .map_err(|err| {
                 BasicErrorWith404::internal_with_code(
                     err,
@@ -637,8 +637,8 @@ impl StateApi {
         let table_rows: Vec<TableRow> = kvs
             .into_iter()
             .map(|(key, value)| TableRow {
-                key: HexEncodedBytes::from(key.encoded().to_vec()),
-                value: HexEncodedBytes::from(value.bytes().to_vec()),
+                key: key.encoded().to_vec(),
+                value: value.bytes().to_vec(),
             })
             .collect();
 

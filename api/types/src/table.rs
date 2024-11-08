@@ -29,6 +29,6 @@ pub struct RawTableItemRequest {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Object)]
 pub struct TableRow {
-    pub key: HexEncodedBytes,
-    pub value: HexEncodedBytes,
+    pub key: Vec<u8>,
+    pub value: Vec<u8>,
 }
