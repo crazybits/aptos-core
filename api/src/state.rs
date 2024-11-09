@@ -14,10 +14,9 @@ use crate::{
 };
 use anyhow::Context as AnyhowContext;
 use aptos_api_types::{
-    verify_module_identifier, Address, AptosErrorCode, AsConverter, HexEncodedBytes,
-    IdentifierWrapper, MoveModuleBytecode, MoveResource, MoveStructTag, MoveValue,
-    RawStateValueRequest, RawTableItemRequest, TableItemRequest, TableRow, VerifyInput,
-    VerifyInputWithRecursion, U64,
+    verify_module_identifier, Address, AptosErrorCode, AsConverter, IdentifierWrapper,
+    MoveModuleBytecode, MoveResource, MoveStructTag, MoveValue, RawStateValueRequest,
+    RawTableItemRequest, TableItemRequest, TableRow, VerifyInput, VerifyInputWithRecursion, U64,
 };
 use aptos_types::state_store::{state_key::StateKey, table::TableHandle, TStateView};
 use move_core_types::language_storage::StructTag;
